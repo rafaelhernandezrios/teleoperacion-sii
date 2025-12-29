@@ -83,7 +83,7 @@ router.post('/login', async (req, res) => {
       allowed_robots: user.allowed_robots || [],
     };
 
-    // Crear sesión directamente (sin regenerate para evitar problemas en Vercel)
+    // Crear sesión directamente
     req.session.user = {
       id: user._id.toString(),
       name: user.name,
@@ -92,60 +92,44 @@ router.post('/login', async (req, res) => {
       allowed_robots: user.allowed_robots || [],
     };
 
-    // Marcar la sesión como modificada para forzar el guardado
-    req.session.touch();
-
     // Guardar sesión explícitamente antes de redirigir
     req.session.save((err) => {
       if (err) {
         console.error('❌ Error saving session:', err);
-        console.error('Error details:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
         return res.render('auth/login', {
           title: 'Login',
           error: 'Error signing in. Please try again.',
         });
       }
       
-      console.log('✅ Session save callback called for user:', user.email);
+      console.log('✅ Session saved for user:', user.email);
       console.log('Session ID:', req.sessionID);
-      console.log('Session data:', JSON.stringify(req.session.user));
       
-      // Verificar que la cookie se establezca correctamente
-      const setCookieHeader = res.getHeader('Set-Cookie');
-      console.log('Set-Cookie header:', setCookieHeader);
+      // Establecer la cookie manualmente con las mismas opciones que express-session
+      // Esto es necesario porque express-session puede no establecerla antes del redirect
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 14 * 24 * 60 * 60 * 1000,
+        path: '/',
+      };
       
-      // Verificar inmediatamente si la sesión está en el store
-      const store = req.sessionStore;
-      store.get(req.sessionID, (err, session) => {
+      res.cookie('sessionId', req.sessionID, cookieOptions);
+      console.log('✅ Cookie set with sessionID:', req.sessionID);
+      
+      // Verificar que la sesión está en el store
+      req.sessionStore.get(req.sessionID, (err, session) => {
         if (err) {
-          console.error('❌ Error verifying session in store:', err);
+          console.error('❌ Error verifying session:', err);
+        } else if (session) {
+          console.log('✅ Session confirmed in MongoDB store');
         } else {
-          if (session) {
-            console.log('✅ Session verified in store immediately after save');
-            console.log('Session data in store:', JSON.stringify(session));
-          } else {
-            console.log('⚠️ WARNING: Session not found in store immediately after save!');
-            console.log('This may indicate a MongoDB write issue or timing problem.');
-          }
+          console.log('⚠️ Session not found in store (may be async write)');
         }
       });
       
-      // Forzar el establecimiento de la cookie si no se estableció automáticamente
-      if (!setCookieHeader || (Array.isArray(setCookieHeader) && setCookieHeader.length === 0)) {
-        console.log('⚠️ Cookie not set automatically, setting manually...');
-        const cookieOptions = {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          maxAge: 14 * 24 * 60 * 60 * 1000,
-          path: '/',
-        };
-        res.cookie('sessionId', req.sessionID, cookieOptions);
-        console.log('✅ Cookie set manually with sessionID:', req.sessionID);
-      } else {
-        console.log('✅ Cookie set automatically:', Array.isArray(setCookieHeader) ? setCookieHeader.join(', ') : setCookieHeader);
-      }
-      
+      // Redirigir después de establecer la cookie
       res.redirect('/dashboard');
     });
   } catch (error) {

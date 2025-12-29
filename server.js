@@ -80,8 +80,8 @@ sessionStore.on('error', (error) => {
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
-    resave: true, // Cambiar a true para Vercel
-    saveUninitialized: true, // Cambiar a true para asegurar que se establezca la cookie
+    resave: false, // Solo guardar si la sesión fue modificada
+    saveUninitialized: false, // No crear sesiones vacías - solo cuando hay datos
     store: sessionStore,
     cookie: {
       secure: isProduction, // true en producción (HTTPS)
