@@ -44,7 +44,8 @@ const sessionStore = MongoStore.create({
   ttl: 14 * 24 * 60 * 60, // 14 días
   touchAfter: 24 * 3600, // Lazy session update
   autoRemove: 'native', // Usar el método nativo de MongoDB para limpiar sesiones expiradas
-  stringify: false, // No stringify, guardar como objeto
+  // No especificar stringify - usar el default de connect-mongo
+  // stringify: true es el default y funciona mejor
   collectionName: 'sessions', // Nombre de la colección
   // Opciones adicionales para Vercel/serverless
   mongoOptions: {
@@ -95,25 +96,84 @@ app.use(
   })
 );
 
+// Middleware para restaurar sesión si los datos no están cargados
+app.use(async (req, res, next) => {
+  // Solo verificar si hay un sessionID pero no hay datos de usuario
+  if (req.sessionID && req.session && !req.session.user) {
+    console.log('⚠️ Session exists but user data missing, attempting to restore...');
+    console.log('Session ID:', req.sessionID);
+    
+    // Intentar recuperar la sesión desde MongoDB
+    sessionStore.get(req.sessionID, (err, session) => {
+      if (err) {
+        console.error('❌ Error getting session from store:', err);
+        return next();
+      }
+      
+      if (session && session.user) {
+        console.log('✅ Restoring user data from MongoDB');
+        // Restaurar los datos del usuario en la sesión
+        req.session.user = session.user;
+        // Guardar la sesión restaurada
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error('❌ Error saving restored session:', saveErr);
+          } else {
+            console.log('✅ Session restored successfully');
+          }
+          next();
+        });
+      } else {
+        console.log('❌ Session not found in MongoDB or has no user data');
+        next();
+      }
+    });
+  } else {
+    next();
+  }
+});
+
 // Middleware para debug de sesiones (solo en desarrollo o para debugging)
 app.use((req, res, next) => {
   if (req.path === '/dashboard' || req.path.startsWith('/auth')) {
     console.log('=== Session Debug ===');
     console.log('Path:', req.path);
-    console.log('Session ID from cookie:', req.sessionID);
+    console.log('Session ID from req.sessionID:', req.sessionID);
     console.log('Session exists:', !!req.session);
     console.log('Session user:', req.session?.user ? 'exists' : 'missing');
+    console.log('Full session object keys:', Object.keys(req.session || {}));
     console.log('Cookies in request:', req.headers.cookie);
+    
+    // Parsear cookies manualmente para ver qué sessionId está llegando
+    if (req.headers.cookie) {
+      const cookies = req.headers.cookie.split(';').reduce((acc, cookie) => {
+        const [key, value] = cookie.trim().split('=');
+        acc[key] = value;
+        return acc;
+      }, {});
+      console.log('Parsed cookies:', cookies);
+      console.log('sessionId from parsed cookies:', cookies.sessionId);
+    }
     
     // Verificar si la sesión existe en MongoDB
     if (req.sessionID) {
       sessionStore.get(req.sessionID, (err, session) => {
         if (err) {
-          console.log('Error getting session from store:', err);
+          console.log('❌ Error getting session from store:', err);
         } else {
-          console.log('Session in MongoDB:', session ? 'found' : 'not found');
           if (session) {
-            console.log('Session data in MongoDB:', JSON.stringify(session));
+            console.log('✅ Session found in MongoDB');
+            console.log('Session data in MongoDB:', JSON.stringify(session, null, 2));
+            console.log('Session.user in MongoDB:', session.user ? 'exists' : 'missing');
+            
+            // Comparar sessionID
+            if (session._id !== req.sessionID) {
+              console.log('⚠️ WARNING: Session ID mismatch!');
+              console.log('  - req.sessionID:', req.sessionID);
+              console.log('  - session._id:', session._id);
+            }
+          } else {
+            console.log('❌ Session NOT found in MongoDB for ID:', req.sessionID);
           }
         }
       });

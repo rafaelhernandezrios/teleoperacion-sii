@@ -74,15 +74,6 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Create session
-    req.session.user = {
-      id: user._id.toString(),
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      allowed_robots: user.allowed_robots || [],
-    };
-
     // Crear sesión directamente
     req.session.user = {
       id: user._id.toString(),
