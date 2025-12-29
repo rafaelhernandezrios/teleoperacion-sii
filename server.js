@@ -98,6 +98,11 @@ app.use(
 
 // Middleware para restaurar sesión si los datos no están cargados
 app.use((req, res, next) => {
+  // No restaurar sesión en rutas de logout o login
+  if (req.path === '/auth/logout' || req.path === '/auth/login') {
+    return next();
+  }
+  
   // Si ya hay datos de usuario, continuar inmediatamente
   if (req.session && req.session.user) {
     return next();

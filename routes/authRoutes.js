@@ -235,11 +235,28 @@ router.post('/register', async (req, res) => {
  * Logout
  */
 router.get('/logout', requireAuth, (req, res) => {
+  const sessionId = req.sessionID;
+  
+  console.log('Logout requested for session:', sessionId);
+  
+  // Limpiar la cookie primero
+  res.clearCookie('sessionId', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  });
+  
+  // Destruir la sesión
   req.session.destroy((err) => {
     if (err) {
-      console.error('Error logging out:', err);
+      console.error('Error destroying session:', err);
+    } else {
+      console.log('✅ Session destroyed successfully');
     }
-    res.redirect('/auth/login');
+    
+    // Redirigir a la landing page (raíz)
+    res.redirect('/');
   });
 });
 
