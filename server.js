@@ -98,14 +98,21 @@ app.use(
 
 // Middleware para restaurar sesión si los datos no están cargados
 app.use((req, res, next) => {
-  // Si ya hay datos de usuario, continuar
+  // Si ya hay datos de usuario, continuar inmediatamente
   if (req.session && req.session.user) {
     return next();
   }
   
   // Verificar la cookie directamente
   const cookieSessionId = req.cookies?.sessionId;
-  let handled = false;
+  let hasCalledNext = false;
+  
+  const safeNext = () => {
+    if (!hasCalledNext) {
+      hasCalledNext = true;
+      next();
+    }
+  };
   
   // Si hay una cookie con sessionID pero req.sessionID es diferente, hay un problema
   if (cookieSessionId && req.sessionID && cookieSessionId !== req.sessionID) {
@@ -116,34 +123,25 @@ app.use((req, res, next) => {
     
     // Intentar cargar la sesión usando el ID de la cookie
     sessionStore.get(cookieSessionId, (err, session) => {
-      if (handled) return;
+      if (hasCalledNext) return;
       
       if (err) {
         console.error('❌ Error getting session from store:', err);
-        handled = true;
-        return next();
+        return safeNext();
       }
       
       if (session && session.user) {
         console.log('✅ Found session with user data, restoring to current session...');
-        // Copiar los datos a la sesión actual
+        // Copiar los datos a la sesión actual sin guardar (evita crear nueva sesión)
         req.session.user = session.user;
-        req.session.save((saveErr) => {
-          if (saveErr) {
-            console.error('❌ Error saving restored session:', saveErr);
-          } else {
-            console.log('✅ Session restored successfully');
-          }
-          if (!handled) {
-            handled = true;
-            next();
-          }
-        });
-        return;
+        // Marcar como modificado pero no guardar explícitamente para evitar crear nueva sesión
+        req.session.touch();
+        console.log('✅ Session restored successfully');
+        return safeNext();
       } else {
         console.log('❌ Session from cookie not found in MongoDB');
-        // Continuar con la verificación normal
-        checkSessionData();
+        // No continuar con checkSessionData - ya intentamos restaurar
+        return safeNext();
       }
     });
   } else {
@@ -152,7 +150,7 @@ app.use((req, res, next) => {
   }
   
   function checkSessionData() {
-    if (handled) return;
+    if (hasCalledNext) return;
     
     // Solo verificar si hay un sessionID pero no hay datos de usuario
     if (req.sessionID && req.session && !req.session.user) {
@@ -161,39 +159,28 @@ app.use((req, res, next) => {
       
       // Intentar recuperar la sesión desde MongoDB
       sessionStore.get(req.sessionID, (err, session) => {
-        if (handled) return;
+        if (hasCalledNext) return;
         
         if (err) {
           console.error('❌ Error getting session from store:', err);
-          handled = true;
-          return next();
+          return safeNext();
         }
         
         if (session && session.user) {
           console.log('✅ Restoring user data from MongoDB');
           // Restaurar los datos del usuario en la sesión
           req.session.user = session.user;
-          // Guardar la sesión restaurada
-          req.session.save((saveErr) => {
-            if (saveErr) {
-              console.error('❌ Error saving restored session:', saveErr);
-            } else {
-              console.log('✅ Session restored successfully');
-            }
-            if (!handled) {
-              handled = true;
-              next();
-            }
-          });
+          // Marcar como modificado pero no guardar explícitamente
+          req.session.touch();
+          console.log('✅ Session restored successfully');
+          return safeNext();
         } else {
           console.log('❌ Session not found in MongoDB or has no user data');
-          handled = true;
-          next();
+          return safeNext();
         }
       });
     } else {
-      handled = true;
-      next();
+      safeNext();
     }
   }
 });
