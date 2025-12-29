@@ -44,8 +44,6 @@ const sessionStore = MongoStore.create({
   ttl: 14 * 24 * 60 * 60, // 14 días
   touchAfter: 24 * 3600, // Lazy session update
   autoRemove: 'native', // Usar el método nativo de MongoDB para limpiar sesiones expiradas
-  // No especificar stringify - usar el default de connect-mongo
-  // stringify: true es el default y funciona mejor
   collectionName: 'sessions', // Nombre de la colección
   // Opciones adicionales para Vercel/serverless
   mongoOptions: {

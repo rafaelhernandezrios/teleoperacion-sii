@@ -83,7 +83,7 @@ router.post('/login', async (req, res) => {
       allowed_robots: user.allowed_robots || [],
     };
 
-    // Guardar sesión explícitamente antes de redirigir
+    // Guardar sesión explícitamente y esperar a que se persista en MongoDB
     req.session.save((err) => {
       if (err) {
         console.error('❌ Error saving session:', err);
@@ -93,11 +93,10 @@ router.post('/login', async (req, res) => {
         });
       }
       
-      console.log('✅ Session saved for user:', user.email);
+      console.log('✅ Session save callback called for user:', user.email);
       console.log('Session ID:', req.sessionID);
       
-      // Establecer la cookie manualmente con las mismas opciones que express-session
-      // Esto es necesario porque express-session puede no establecerla antes del redirect
+      // Establecer la cookie manualmente
       const cookieOptions = {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -109,19 +108,41 @@ router.post('/login', async (req, res) => {
       res.cookie('sessionId', req.sessionID, cookieOptions);
       console.log('✅ Cookie set with sessionID:', req.sessionID);
       
-      // Verificar que la sesión está en el store
-      req.sessionStore.get(req.sessionID, (err, session) => {
-        if (err) {
-          console.error('❌ Error verifying session:', err);
-        } else if (session) {
-          console.log('✅ Session confirmed in MongoDB store');
-        } else {
-          console.log('⚠️ Session not found in store (may be async write)');
-        }
-      });
+      // Esperar a que la sesión se persista en MongoDB antes de redirigir
+      // Esto es crítico en Vercel/serverless donde la función puede terminar antes
+      const checkSessionInStore = (attempts = 0) => {
+        const maxAttempts = 10;
+        const delay = 100; // 100ms entre intentos
+        
+        req.sessionStore.get(req.sessionID, (err, session) => {
+          if (err) {
+            console.error('❌ Error verifying session:', err);
+            // Redirigir de todas formas después de algunos intentos
+            if (attempts >= maxAttempts) {
+              console.log('⚠️ Max attempts reached, redirecting anyway');
+              return res.redirect('/dashboard');
+            }
+            setTimeout(() => checkSessionInStore(attempts + 1), delay);
+            return;
+          }
+          
+          if (session && session.user) {
+            console.log('✅ Session confirmed in MongoDB store with user data');
+            console.log('Session data:', JSON.stringify(session.user));
+            res.redirect('/dashboard');
+          } else if (attempts < maxAttempts) {
+            console.log(`⏳ Session not found yet (attempt ${attempts + 1}/${maxAttempts}), retrying...`);
+            setTimeout(() => checkSessionInStore(attempts + 1), delay);
+          } else {
+            console.log('⚠️ Session not found after max attempts, redirecting anyway');
+            // Redirigir de todas formas - el middleware de restauración debería manejarlo
+            res.redirect('/dashboard');
+          }
+        });
+      };
       
-      // Redirigir después de establecer la cookie
-      res.redirect('/dashboard');
+      // Empezar a verificar después de un pequeño delay
+      setTimeout(() => checkSessionInStore(), 50);
     });
   } catch (error) {
     console.error('Error in login:', error);
