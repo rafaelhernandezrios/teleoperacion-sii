@@ -83,24 +83,59 @@ router.post('/login', async (req, res) => {
       allowed_robots: user.allowed_robots || [],
     };
 
-    // Guardar sesión explícitamente antes de redirigir
-    req.session.save((err) => {
+    // Regenerar el ID de sesión para seguridad
+    req.session.regenerate((err) => {
       if (err) {
-        console.error('Error saving session:', err);
+        console.error('Error regenerating session:', err);
         return res.render('auth/login', {
           title: 'Login',
           error: 'Error signing in. Please try again.',
         });
       }
-      console.log('Session saved successfully for user:', user.email);
-      console.log('Session ID:', req.sessionID);
-      console.log('Session data:', JSON.stringify(req.session.user));
-      
-      // Verificar que la cookie se establezca correctamente
-      const setCookieHeader = res.getHeader('Set-Cookie');
-      console.log('Set-Cookie header:', setCookieHeader);
-      
-      res.redirect('/dashboard');
+
+      // Crear sesión después de regenerar
+      req.session.user = {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        allowed_robots: user.allowed_robots || [],
+      };
+
+      // Guardar sesión explícitamente antes de redirigir
+      req.session.save((err) => {
+        if (err) {
+          console.error('Error saving session:', err);
+          return res.render('auth/login', {
+            title: 'Login',
+            error: 'Error signing in. Please try again.',
+          });
+        }
+        
+        console.log('Session saved successfully for user:', user.email);
+        console.log('Session ID:', req.sessionID);
+        console.log('Session data:', JSON.stringify(req.session.user));
+        
+        // Verificar que la cookie se establezca correctamente
+        const setCookieHeader = res.getHeader('Set-Cookie');
+        console.log('Set-Cookie header:', setCookieHeader);
+        
+        // Si la cookie no se estableció, establecerla manualmente
+        if (!setCookieHeader || setCookieHeader.length === 0) {
+          console.log('⚠️ Cookie not set automatically, setting manually...');
+          const cookieOptions = {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 14 * 24 * 60 * 60 * 1000,
+            path: '/',
+          };
+          res.cookie('sessionId', req.sessionID, cookieOptions);
+          console.log('✅ Cookie set manually with sessionID:', req.sessionID);
+        }
+        
+        res.redirect('/dashboard');
+      });
     });
   } catch (error) {
     console.error('Error in login:', error);

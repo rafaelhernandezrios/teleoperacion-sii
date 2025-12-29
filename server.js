@@ -39,18 +39,19 @@ const isProduction = process.env.NODE_ENV === 'production';
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
-    resave: false,
-    saveUninitialized: false,
+    resave: true, // Cambiar a true para Vercel
+    saveUninitialized: true, // Cambiar a true para asegurar que se establezca la cookie
     store: MongoStore.create({
       mongoUrl: process.env.MONGO_URI,
       ttl: 14 * 24 * 60 * 60, // 14 días
       touchAfter: 24 * 3600, // Lazy session update
+      autoRemove: 'native', // Usar el método nativo de MongoDB para limpiar sesiones expiradas
     }),
     cookie: {
       secure: isProduction, // true en producción (HTTPS)
       httpOnly: true,
       maxAge: 14 * 24 * 60 * 60 * 1000, // 14 días
-      sameSite: isProduction ? 'lax' : 'lax', // 'lax' funciona mejor en Vercel
+      sameSite: 'lax', // 'lax' funciona mejor en Vercel
       path: '/', // Asegurar que la cookie esté disponible en todas las rutas
       // No especificar domain para que use el dominio actual automáticamente
     },
